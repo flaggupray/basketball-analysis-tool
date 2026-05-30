@@ -16,9 +16,11 @@ a = Analysis(
     ],
     hiddenimports=[
         'src.models', 'src.analyzer', 'src.calculator', 'src.benchmarks',
-        'src.camera', 'src.video_analyzer',
+        'src.camera', 'src.video_analyzer', 'src.ai_analyzer', 'src.config',
         'cv2', 'numpy', 'PIL', 'PIL.Image', 'PIL.ImageTk',
         'cv2.videoio_registry',
+        'cryptography', 'cryptography.fernet',
+        'requests', 'urllib3',
     ],
     hookspath=[],
     hooksconfig={},
