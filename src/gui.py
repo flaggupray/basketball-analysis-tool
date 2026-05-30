@@ -70,13 +70,24 @@ class App(tk.Tk):
     @property
     def camera(self):
         if self._camera is None:
-            self._camera = _lazy_camera()()
+            try:
+                self._camera = _lazy_camera()()
+            except Exception as e:
+                messagebox.showerror("Camera Error",
+                    f"Could not load camera module.\n\n{str(e)}\n\n"
+                    "Make sure OpenCV is installed:\npip install opencv-python")
+                raise
         return self._camera
 
     @property
     def video(self):
         if self._video is None:
-            self._video = _lazy_video_analyzer()()
+            try:
+                self._video = _lazy_video_analyzer()()
+            except Exception as e:
+                messagebox.showerror("Video Error",
+                    f"Could not load video module.\n\n{str(e)}")
+                raise
         return self._video
 
     # ── Style (minimal, fast) ─────────────────────────────────
@@ -428,28 +439,34 @@ class App(tk.Tk):
         p = filedialog.askopenfilename(filetypes=[("Video","*.mp4 *.mov *.avi *.mkv"),("All","*.*")])
         if not p: return
         self._stop_vid()
-        a = self.video.load(p)
-        if a is None:
-            messagebox.showerror("Error", f"Cannot open:\n{p}"); return
-        self._vid_info.configure(text=f"{a.path.name} | {a.duration:.1f}s | "
-                                      f"{a.resolution[0]}x{a.resolution[1]}")
-        self._vid_slider.configure(to=a.frame_count - 1); self._vid_slider.set(0)
-        self._update_shot_counter()
-        self._vid_loop()
+        try:
+            a = self.video.load(p)
+            if a is None:
+                messagebox.showerror("Error", f"Cannot open:\n{p}"); return
+            self._vid_info.configure(text=f"{a.path.name} | {a.duration:.1f}s | "
+                                          f"{a.resolution[0]}x{a.resolution[1]}")
+            self._vid_slider.configure(to=a.frame_count - 1); self._vid_slider.set(0)
+            self._update_shot_counter()
+            self._vid_loop()
+        except Exception as e:
+            messagebox.showerror("Video Error", str(e))
 
     def _vid_loop(self):
         self._stop_vid()
         def _l():
-            if not hasattr(self, '_vid_canvas') or self.video.analysis is None: return
-            if not self.video.paused:
-                self.video.get_frame()
-                self.video._current_frame_idx += 1
-                if self.video._current_frame_idx >= self.video.analysis.frame_count:
-                    self.video._current_frame_idx = 0
-                self._vid_slider.set(self.video._current_frame_idx)
-            self._render_video()
-            delay = int(1000/max(self.video.analysis.fps,1)/max(self.video.playback_speed,0.1))
-            self._vid_job = self.after(max(delay,30), _l)  # min 30ms = ~33fps max
+            try:
+                if not hasattr(self, '_vid_canvas') or self.video.analysis is None: return
+                if not self.video.paused:
+                    self.video.get_frame()
+                    self.video._current_frame_idx += 1
+                    if self.video._current_frame_idx >= self.video.analysis.frame_count:
+                        self.video._current_frame_idx = 0
+                    self._vid_slider.set(self.video._current_frame_idx)
+                self._render_video()
+                delay = int(1000/max(self.video.analysis.fps,1)/max(self.video.playback_speed,0.1))
+                self._vid_job = self.after(max(delay,30), _l)
+            except Exception:
+                pass  # Don't crash on frame errors
         _l()
 
     def _stop_vid(self):
@@ -575,12 +592,16 @@ class App(tk.Tk):
         tips.pack(fill=tk.X, padx=14, pady=(0,10))
 
     def _cam_open(self):
-        if self.camera.is_open: self._cam_close()
-        if self.camera.open(0):
-            self._cam_status.configure(text="Live", foreground=C["green"])
-            self._cam_loop()
-        else:
-            self._cam_status.configure(text="Not found", foreground=C["red"])
+        try:
+            if self.camera.is_open: self._cam_close()
+            if self.camera.open(0):
+                self._cam_status.configure(text="Live", foreground=C["green"])
+                self._cam_loop()
+            else:
+                self._cam_status.configure(text="No camera found", foreground=C["red"])
+        except Exception as e:
+            self._cam_status.configure(text="Error", foreground=C["red"])
+            messagebox.showerror("Camera Error", str(e))
 
     def _cam_close(self):
         self._stop_cam()
@@ -591,22 +612,25 @@ class App(tk.Tk):
     def _cam_loop(self):
         self._stop_cam()
         def _l():
-            if not self.camera.is_open: return
-            frame = self.camera.preview_frame()
-            if frame is not None and hasattr(self, '_cam_canvas'):
-                cw=self._cam_canvas.winfo_width(); ch=self._cam_canvas.winfo_height()
-                if cw>10 and ch>10:
-                    h,w=frame.shape[:2]; scale=min(cw/w,ch/h)
-                    nw,nh=int(w*scale),int(h*scale)
-                    Image, ImageTk = _lazy_pil()
-                    img=Image.fromarray(frame).resize((nw,nh),Image.LANCZOS)
-                    self._cam_photo=ImageTk.PhotoImage(img)
-                    self._cam_canvas.delete("all")
-                    self._cam_canvas.create_image(cw//2,ch//2,image=self._cam_photo)
-            if self.camera.is_recording:
-                self.camera.write_frame(frame)
-                self._cam_timer_var.set(f"🔴 REC {time.time()-self.camera._start_time:.0f}s")
-            self._cam_job=self.after(50, _l)  # 20fps is enough for preview
+            try:
+                if not self.camera.is_open: return
+                frame = self.camera.preview_frame()
+                if frame is not None and hasattr(self, '_cam_canvas'):
+                    cw=self._cam_canvas.winfo_width(); ch=self._cam_canvas.winfo_height()
+                    if cw>10 and ch>10:
+                        h,w=frame.shape[:2]; scale=min(cw/w,ch/h)
+                        nw,nh=int(w*scale),int(h*scale)
+                        Image, ImageTk = _lazy_pil()
+                        img=Image.fromarray(frame).resize((nw,nh),Image.LANCZOS)
+                        self._cam_photo=ImageTk.PhotoImage(img)
+                        self._cam_canvas.delete("all")
+                        self._cam_canvas.create_image(cw//2,ch//2,image=self._cam_photo)
+                if self.camera.is_recording:
+                    self.camera.write_frame(frame)
+                    self._cam_timer_var.set(f"🔴 REC {time.time()-self.camera._start_time:.0f}s")
+            except Exception:
+                pass  # Don't crash on individual frame errors
+            self._cam_job=self.after(50, _l)
         _l()
 
     def _stop_cam(self):
@@ -714,42 +738,48 @@ class App(tk.Tk):
         if not hasattr(self, '_vid_canvas') or self.video.analysis is None or self.video.analysis.total_shots == 0:
             messagebox.showinfo("No shots", "Go to Video tab, load a video, and mark shots first.")
             return
-        cfg = _lazy_config()
-        if not cfg.has_api_key():
-            self._open_settings(); return
-        ai = _lazy_ai()
-        self._ai_run_thread(lambda: ai.analyze_shooting(
-            shot_data=self.video.get_consistency_report(),
-            player_name="Player",
-        ))
+        try:
+            cfg = _lazy_config()
+            if not cfg.has_api_key():
+                self._open_settings(); return
+            ai = _lazy_ai()
+            self._ai_run_thread(lambda: ai.analyze_shooting(
+                shot_data=self.video.get_consistency_report(),
+                player_name="Player",
+            ))
+        except Exception as e:
+            messagebox.showerror("AI Error", str(e))
 
     def _ai_analyze_stats(self):
         if self._current_result is None:
             messagebox.showinfo("No data", "Run stat analysis first (Analyze tab)."); return
-        cfg = _lazy_config()
-        if not cfg.has_api_key():
-            self._open_settings(); return
-        r = self._current_result
-        data = {
-            "name": r.player.name,
-            "position": r.player.position.value,
-            "level": r.player.competition_level.value,
-            "stats": {
-                "ppg": r.player.stats.points_per_game,
-                "apg": r.player.stats.assists_per_game,
-                "rpg": r.player.stats.rebounds_per_game,
-                "spg": r.player.stats.steals_per_game,
-                "bpg": r.player.stats.blocks_per_game,
-                "topg": r.player.stats.turnovers_per_game,
-                "fg%": f"{r.player.stats.field_goal_pct:.1%}",
-                "3p%": f"{r.player.stats.three_point_pct:.1%}",
-                "ft%": f"{r.player.stats.free_throw_pct:.1%}",
-            },
-            "weaknesses": [{"category": w.category, "severity": f"{w.severity:.0%}"}
-                           for w in r.weaknesses[:3]],
-        }
-        ai = _lazy_ai()
-        self._ai_run_thread(lambda: ai.analyze_player_stats(data))
+        try:
+            cfg = _lazy_config()
+            if not cfg.has_api_key():
+                self._open_settings(); return
+            r = self._current_result
+            data = {
+                "name": r.player.name,
+                "position": r.player.position.value,
+                "level": r.player.competition_level.value,
+                "stats": {
+                    "ppg": r.player.stats.points_per_game,
+                    "apg": r.player.stats.assists_per_game,
+                    "rpg": r.player.stats.rebounds_per_game,
+                    "spg": r.player.stats.steals_per_game,
+                    "bpg": r.player.stats.blocks_per_game,
+                    "topg": r.player.stats.turnovers_per_game,
+                    "fg%": f"{r.player.stats.field_goal_pct:.1%}",
+                    "3p%": f"{r.player.stats.three_point_pct:.1%}",
+                    "ft%": f"{r.player.stats.free_throw_pct:.1%}",
+                },
+                "weaknesses": [{"category": w.category, "severity": f"{w.severity:.0%}"}
+                               for w in r.weaknesses[:3]],
+            }
+            ai = _lazy_ai()
+            self._ai_run_thread(lambda: ai.analyze_player_stats(data))
+        except Exception as e:
+            messagebox.showerror("AI Error", str(e))
 
     def _ai_run_thread(self, fn):
         self._ai_progress.start(8)
