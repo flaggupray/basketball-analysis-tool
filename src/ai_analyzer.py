@@ -1,279 +1,150 @@
-"""MiniMax AI analyzer for basketball shooting video feedback.
+"""AI analyzer — works with any OpenAI-compatible provider.
 
-Uses the fastest MiniMax chat model to provide coaching analysis
-based on shot tracking data extracted from video.
+Presets for OpenAI, MiniMax, Groq, DeepSeek, Ollama, Together.
+MiniMax uses their native v2 format; all others use /v1/chat/completions.
 """
 
 from __future__ import annotations
 
-import base64
-import json
-from io import BytesIO
+import json, threading
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import requests
-from PIL import Image
-
-from src.config import load_api_key, has_api_key
-
-MINIMAX_BASE = "https://api.minimax.chat/v1"
-DEFAULT_MODEL = "MiniMax-M2.5-highspeed"
-FALLBACK_MODELS = [
-    "MiniMax-M2.5-highspeed",
-    "MiniMax-M2.5",
-    "MiniMax-M2.7-highspeed",
-    "MiniMax-M2.7",
-    "abab6.5s-chat",
-]
-
-_MODEL_CACHE: str | None = None
+from src.config import load, has_key, PROVIDERS, MODEL_DEFAULTS
 
 
-def _model_config_path() -> Path:
-    p = Path.home() / ".basketball-analyzer" / ".model"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
-
-def get_model() -> str:
-    global _MODEL_CACHE
-    if _MODEL_CACHE:
-        return _MODEL_CACHE
-    p = _model_config_path()
-    if p.exists():
-        _MODEL_CACHE = p.read_text().strip()
-        return _MODEL_CACHE
-    return DEFAULT_MODEL
-
-def save_model(model: str):
-    global _MODEL_CACHE
-    _MODEL_CACHE = model
-    p = _model_config_path()
-    p.write_text(model)
-
-def get_available_models() -> list[str]:
-    return FALLBACK_MODELS
-
-
-def _headers() -> dict[str, str]:
-    key = load_api_key()
-    if not key:
-        raise RuntimeError("API key not configured")
+def _cfg() -> dict:
+    c = load()
     return {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
+        "key": c.get("key", ""),
+        "base_url": c.get("base_url", PROVIDERS["MiniMax"]),
+        "model": c.get("model", MODEL_DEFAULTS["MiniMax"]),
     }
 
 
-def _extract_content(msg: dict) -> str:
-    """Extract text content from a MiniMax response message.
-
-    Regular models (M2.5) use 'content'; reasoning models (M2.7) may
-    put the final answer in 'content' with reasoning in 'reasoning_content'.
-    """
-    # Prefer content; fall back to reasoning_content if content is empty
-    content = msg.get("content", "") or ""
-    if not content.strip():
-        content = msg.get("reasoning_content", "") or ""
-    return content
+def _is_minimax(url: str) -> bool:
+    return "minimax.chat" in url
 
 
-def _encode_frame(frame: np.ndarray) -> str:
-    """Convert a numpy RGB frame to base64 JPEG for the API."""
-    img = Image.fromarray(frame)
-    buf = BytesIO()
-    img.save(buf, format="JPEG", quality=75)
-    return base64.b64encode(buf.getvalue()).decode()
+def _chat(prompt: str, max_tokens: int = 600, timeout: int = 25) -> dict:
+    """Send a chat request using the configured provider."""
+    c = _cfg()
+    if not c["key"]: return {"error": "No API key configured."}
 
+    headers = {"Authorization": f"Bearer {c['key']}", "Content-Type": "application/json"}
 
-def analyze_shooting(
-    shot_data: dict,
-    frames: list[np.ndarray] | None = None,
-    player_name: str = "Player",
-) -> dict[str, Any]:
-    """Send shot tracking data to MiniMax for AI coaching analysis.
-
-    Args:
-        shot_data: Dict with makes, misses, angles, consistency stats
-        frames: Optional key frames from the video
-        player_name: Player name for personalized feedback
-    """
-    if not has_api_key():
-        return {"error": "API key not configured. Set it in Settings tab."}
-
-    # Build prompt
-    prompt = _build_shooting_prompt(shot_data, player_name)
-    messages = [{"role": "user", "content": prompt}]
-
-    # If frames provided, add as image content
-    if frames and len(frames) > 0:
-        content_parts = []
-        # Add up to 3 key frames
-        for i, frame in enumerate(frames[:3]):
-            b64 = _encode_frame(frame)
-            content_parts.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-            })
-        content_parts.append({"type": "text", "text": prompt})
-        messages = [{"role": "user", "content": content_parts}]
-
-    try:
-        model = get_model()
-        resp = requests.post(
-            f"{MINIMAX_BASE}/text/chatcompletion_v2",
-            headers=_headers(),
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 800,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-        if data.get("base_resp", {}).get("status_code") != 0:
-            return {"error": data.get("base_resp", {}).get("status_msg", "API error")}
-
-        reply = _extract_content(data["choices"][0]["message"])
-
-        return {
-            "analysis": reply,
-            "model": model,
-            "tokens_used": data.get("usage", {}).get("total_tokens", 0),
+    if _is_minimax(c["base_url"]):
+        # MiniMax native v2 format
+        body = {
+            "model": c["model"],
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+        }
+    else:
+        # OpenAI-compatible format
+        body = {
+            "model": c["model"],
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0.7,
         }
 
+    try:
+        resp = requests.post(c["base_url"], headers=headers, json=body, timeout=timeout)
+        if resp.status_code != 200:
+            return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+        data = resp.json()
+
+        if _is_minimax(c["base_url"]):
+            err = (data.get("base_resp") or {}).get("status_msg", "")
+            if err: return {"error": err}
+            msg = data.get("choices", [{}])[0].get("message", {})
+            content = msg.get("content") or msg.get("reasoning_content") or ""
+        else:
+            err = (data.get("error") or {}).get("message", "")
+            if err: return {"error": err}
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        return {"analysis": content, "model": c["model"]}
     except requests.RequestException as e:
-        return {"error": f"Network error: {str(e)}"}
-    except (KeyError, IndexError) as e:
-        return {"error": f"Unexpected API response: {str(e)}"}
+        return {"error": f"Network: {e}"}
 
 
-def _build_shooting_prompt(shot_data: dict, name: str) -> str:
-    """Build a structured prompt for the AI coach."""
-    makes = shot_data.get("makes", 0)
-    misses = shot_data.get("misses", 0)
+def analyze_shooting(shot_data: dict, player_name: str = "Player", frames=None) -> dict:
+    if not has_key(): return {"error": "No API key configured."}
+    makes = shot_data.get("makes", 0); misses = shot_data.get("misses", 0)
     total = makes + misses
-    make_pct = makes / total if total > 0 else 0
-
+    pct = makes / total if total else 0
     angle = shot_data.get("avg_release_angle")
-    angle_std = shot_data.get("angle_consistency_std")
-    consistency = shot_data.get("consistency_grade", "N/A")
-    angle_grade = shot_data.get("angle_grade", "N/A")
-    shooting_grade = shot_data.get("shooting_grade", "N/A")
+    ang_std = shot_data.get("angle_consistency_std")
 
-    prompt = f"""You are a professional basketball shooting coach. Analyze this player's shooting session data and give personalized, actionable feedback. Be encouraging but honest. Keep it under 300 words.
-
-Player: {name}
-Shots: {makes} makes / {misses} misses = {make_pct:.0%} ({total} total)
-Shooting Grade: {shooting_grade}
-"""
-
+    prompt = (
+        f"You are a basketball shooting coach. Analyze this session:\n\n"
+        f"Player: {player_name}\n"
+        f"Shots: {makes}M / {misses}X = {pct:.0%} ({total} total)\n"
+        f"Grade: {shot_data.get('shooting_grade', 'N/A')}\n"
+    )
     if angle is not None:
-        prompt += f"Average Release Angle: {angle:.1f}° ({angle_grade})\n"
-
-    if angle_std is not None:
-        prompt += f"Angle Consistency (std dev): {angle_std:.1f}° ({consistency})\n"
-
-    prompt += """
-Please provide:
-1. **Overall Assessment** — 1-2 sentences on their shooting performance
-2. **What's Working** — 1-2 things they're doing well
-3. **What to Improve** — 1-2 specific areas to focus on
-4. **Drill Recommendation** — 1 specific drill to practice
-5. **Encouragement** — a motivational closing line
-
-Format the response in Chinese if the player name appears to be Chinese, otherwise English."""
-    return prompt
+        prompt += f"Release Angle: {angle:.1f}° ({shot_data.get('angle_grade', 'N/A')})\n"
+    if ang_std is not None:
+        prompt += f"Consistency σ: {ang_std:.1f}° ({shot_data.get('consistency_grade', 'N/A')})\n"
+    prompt += (
+        "\nProvide:\n"
+        "1. Overall assessment (1-2 sentences)\n"
+        "2. What's working well\n"
+        "3. What to improve\n"
+        "4. One specific drill\n"
+        "5. Motivational close\n"
+        "Keep it under 250 words."
+    )
+    return _chat(prompt, 500)
 
 
-def analyze_player_stats(
-    player_data: dict,
-) -> dict[str, Any]:
-    """AI analysis of player stat weaknesses for additional coaching insight."""
-    if not has_api_key():
-        return {"error": "API key not configured."}
+def analyze_player_stats(player_data: dict) -> dict:
+    if not has_key(): return {"error": "No API key configured."}
+    prompt = (
+        f"You are a basketball skills trainer. Player:\n"
+        f"  Name: {player_data.get('name', 'N/A')}\n"
+        f"  Position: {player_data.get('position', 'N/A')}\n"
+        f"  Level: {player_data.get('level', 'N/A')}\n"
+        f"  Stats: {json.dumps(player_data.get('stats', {}))}\n"
+        f"  Top weaknesses: {json.dumps(player_data.get('weaknesses', []))}\n\n"
+        f"Give: 1) a 1-sentence diagnosis, 2) a 3-drill weekly plan, 3) a mindset tip.\n"
+        f"Keep under 200 words."
+    )
+    return _chat(prompt, 400)
 
-    prompt = f"""You are a basketball skills trainer. A player has the following stats and identified weaknesses. Give a concise training plan.
 
-Player: {player_data.get('name', 'Unknown')}
-Position: {player_data.get('position', 'N/A')}
-Level: {player_data.get('level', 'N/A')}
+def test_connection(key: str = "", base_url: str = "", model: str = "") -> dict:
+    """Test connectivity with given or stored credentials."""
+    c = _cfg()
+    key = key or c["key"]
+    base_url = base_url or c["base_url"]
+    model = model or c["model"]
+    if not key: return {"ok": False, "error": "No API key"}
 
-Stats:
-{json.dumps(player_data.get('stats', {}), indent=2)}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    body = {"model": model, "messages": [{"role": "user", "content": "Say OK"}], "max_tokens": 5}
 
-Top 3 Weaknesses:
-{json.dumps(player_data.get('weaknesses', []), indent=2)}
-
-Provide:
-1. A 2-sentence summary of their biggest issue
-2. A 3-drill weekly training plan targeting their weaknesses
-3. A mindset tip for improvement
-
-Keep the response under 250 words. Be direct and specific."""
+    if _is_minimax(base_url):
+        # MiniMax uses their own format — test with empty prompt to check auth
+        pass  # body already set above
 
     try:
-        resp = requests.post(
-            f"{MINIMAX_BASE}/text/chatcompletion_v2",
-            headers=_headers(),
-            json={
-                "model": get_model(),
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-                "max_tokens": 600,
-            },
-            timeout=25,
-        )
-        resp.raise_for_status()
+        resp = requests.post(base_url, headers=headers, json=body, timeout=12)
         data = resp.json()
 
-        if data.get("base_resp", {}).get("status_code") != 0:
-            return {"error": data.get("base_resp", {}).get("status_msg", "API error")}
-
-        return {
-            "analysis": _extract_content(data["choices"][0]["message"]),
-            "model": get_model(),
-        }
-
-    except requests.RequestException as e:
-        return {"error": f"Network error: {str(e)}"}
-    except (KeyError, IndexError) as e:
-        return {"error": f"Unexpected API response: {str(e)}"}
-
-
-def test_connection() -> dict[str, Any]:
-    """Quick test that the API key works, trying fallback models."""
-    if not has_api_key():
-        return {"ok": False, "error": "No API key configured"}
-
-    models_to_try = [get_model()] + [m for m in FALLBACK_MODELS if m != get_model()]
-
-    for model in models_to_try:
-        try:
-            resp = requests.post(
-                f"{MINIMAX_BASE}/text/chatcompletion_v2",
-                headers=_headers(),
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": "Say OK"}],
-                    "max_tokens": 10,
-                },
-                timeout=10,
-            )
-            data = resp.json()
-            base = data.get("base_resp", {})
-            code = base.get("status_code", 0)
+        if _is_minimax(base_url):
+            code = (data.get("base_resp") or {}).get("status_code", 0)
             if code == 0 and data.get("choices"):
-                save_model(model)
                 return {"ok": True, "model": model}
-            elif code == 0 and data.get("choices") is not None:
-                save_model(model)
+            err = (data.get("base_resp") or {}).get("status_msg", f"HTTP {resp.status_code}")
+            return {"ok": False, "error": err}
+        else:
+            if "choices" in data and data["choices"]:
                 return {"ok": True, "model": model}
-        except Exception:
-            continue
-
-    return {"ok": False, "error": "No working model found for this API plan. Set model manually in Settings."}
+            err = (data.get("error") or {}).get("message", f"HTTP {resp.status_code}")
+            return {"ok": False, "error": err}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

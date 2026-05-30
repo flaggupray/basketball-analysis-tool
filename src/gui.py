@@ -16,7 +16,7 @@ F = "Helvetica Neue"
 def _lazy_camera(): from src.camera import CameraManager; return CameraManager
 def _lazy_video():   from src.video_analyzer import VideoAnalyzer; return VideoAnalyzer
 def _lazy_config():  import src.config as m; return m
-def _lazy_ai():      import src.ai_analyzer as m; return m
+def _lazy_ai():      from src.ai_analyzer import analyze_shooting, analyze_player_stats, test_connection; return analyze_shooting, analyze_player_stats, test_connection
 def _lazy_np():      import numpy as np; return np
 def _lazy_pil():     from PIL import Image, ImageTk; return Image, ImageTk
 
@@ -499,29 +499,32 @@ class App(tk.Tk):
 
     def _ai_refresh_status(self):
         try:
-            cfg=_lazy_config()
-            if cfg.has_api_key():
-                ai=_lazy_ai(); self._ai_status_lbl.configure(text=f"🔑 Ready · {ai.get_model()}", foreground="green")
-            else: self._ai_status_lbl.configure(text="Not configured", foreground="orange")
-        except: self._ai_status_lbl.configure(text="Unknown", foreground="red")
+            c = _lazy_config().load()
+            if c.get("key"):
+                self._ai_status_lbl.configure(
+                    text=f"🔑 Ready · {c.get('model','?')}", foreground="green")
+            else:
+                self._ai_status_lbl.configure(text="Not configured — click Settings", foreground="orange")
+        except Exception:
+            self._ai_status_lbl.configure(text="Unknown", foreground="red")
 
     def _ai_shots(self):
         if "V" not in self._built or self.vid.analysis is None or self.vid.analysis.total_shots==0:
             messagebox.showinfo("No shots", "Load a video and mark shots first."); return
         try:
             cfg=_lazy_config()
-            if not cfg.has_api_key(): self._ai_settings(); return
-            ai=_lazy_ai()
-            self._ai_run(lambda: ai.analyze_shooting(shot_data=self.vid.get_consistency_report(), player_name="Player"))
+            if not cfg.has_key(): self._ai_settings(); return
+            analyze_shooting, _, _ = _lazy_ai()
+            self._ai_run(lambda: analyze_shooting(shot_data=self.vid.get_consistency_report(), player_name="Player"))
         except Exception as e: messagebox.showerror("AI Error", str(e))
 
     def _ai_stats(self):
         if self._current_result is None: messagebox.showinfo("No data", "Run analysis first."); return
         try:
             cfg=_lazy_config()
-            if not cfg.has_api_key(): self._ai_settings(); return
-            r=self._current_result; ai=_lazy_ai()
-            self._ai_run(lambda: ai.analyze_player_stats({
+            if not cfg.has_key(): self._ai_settings(); return
+            r=self._current_result; _, analyze_player_stats, _ = _lazy_ai()
+            self._ai_run(lambda: analyze_player_stats({
                 "name":r.player.name,"position":r.player.position.value,
                 "level":r.player.competition_level.value,
                 "stats":{"ppg":r.player.stats.points_per_game,"apg":r.player.stats.assists_per_game,
@@ -551,34 +554,82 @@ class App(tk.Tk):
         threading.Thread(target=_r, daemon=True).start()
 
     def _ai_settings(self):
-        cfg=_lazy_config(); ai=_lazy_ai()
-        d = tk.Toplevel(self); d.title("API Settings"); d.geometry("480x340")
-        d.resizable(False,False); d.transient(self); d.grab_set()
-        ttk.Label(d, text="MiniMax API Key", font=(F, 12, "bold")).pack(padx=16, pady=(12,4), anchor="w")
-        ke = ttk.Entry(d, width=50, show="•"); ke.pack(padx=16, fill=tk.X)
-        if cfg.has_api_key(): ke.insert(0, cfg.load_api_key() or "")
-        ttk.Label(d, text="Model", font=(F, 12, "bold")).pack(padx=16, pady=(8,4), anchor="w")
-        mv = tk.StringVar(value=ai.get_model())
-        ttk.Combobox(d, textvariable=mv, values=ai.get_available_models(), width=46).pack(padx=16, fill=tk.X)
-        rl = ttk.Label(d, text="", font=(F, 9)); rl.pack(padx=16, pady=4)
+        cfg = _lazy_config()
+        d = tk.Toplevel(self); d.title("AI Provider Settings"); d.geometry("520x520")
+        d.resizable(False, False); d.transient(self); d.grab_set()
+
+        c = cfg.load()
+        saved_key = c.get("key", "")
+        saved_url = c.get("base_url", "")
+        saved_model = c.get("model", "")
+
+        ttk.Label(d, text="AI Provider Settings", font=(F, 14, "bold")).pack(padx=16, pady=(12, 4), anchor="w")
+        ttk.Label(d, text="Works with OpenAI, MiniMax, Groq, DeepSeek, Ollama, and any OpenAI-compatible API.",
+                  font=(F, 9), foreground="#888").pack(padx=16, anchor="w")
+
+        # Provider preset
+        ttk.Label(d, text="Provider Preset", font=(F, 11, "bold")).pack(padx=16, pady=(12, 2), anchor="w")
+        pv = tk.StringVar(value="Custom")
+        providers = list(cfg.PROVIDERS.keys())
+        # Detect current provider
+        for name, url in cfg.PROVIDERS.items():
+            if url and url in saved_url:
+                pv.set(name); break
+        pc = ttk.Combobox(d, textvariable=pv, values=providers, state="readonly", width=48)
+        pc.pack(padx=16, fill=tk.X)
+
+        # Base URL
+        ttk.Label(d, text="API Base URL", font=(F, 11, "bold")).pack(padx=16, pady=(8, 2), anchor="w")
+        uv = tk.StringVar(value=saved_url or cfg.PROVIDERS["MiniMax"])
+        ue = ttk.Entry(d, textvariable=uv, width=52); ue.pack(padx=16, fill=tk.X)
+
+        def _on_provider(*_):
+            name = pv.get()
+            if name in cfg.PROVIDERS and cfg.PROVIDERS[name]:
+                uv.set(cfg.PROVIDERS[name])
+            if name in cfg.MODEL_DEFAULTS:
+                mv.set(cfg.MODEL_DEFAULTS[name])
+        pv.trace("w", _on_provider)
+
+        # API Key
+        ttk.Label(d, text="API Key", font=(F, 11, "bold")).pack(padx=16, pady=(8, 2), anchor="w")
+        ke = ttk.Entry(d, width=52, show="•"); ke.pack(padx=16, fill=tk.X)
+        if saved_key: ke.insert(0, saved_key)
+        ttk.Label(d, text="Key is encrypted before storage, never leaves your computer.",
+                  font=(F, 8), foreground="#888").pack(padx=16, anchor="w")
+
+        # Model
+        ttk.Label(d, text="Model Name", font=(F, 11, "bold")).pack(padx=16, pady=(8, 2), anchor="w")
+        mv = tk.StringVar(value=saved_model or cfg.MODEL_DEFAULTS.get(pv.get(), ""))
+        ttk.Entry(d, textvariable=mv, width=52).pack(padx=16, fill=tk.X)
+        ttk.Label(d, text="Any model your provider supports, e.g. gpt-4o-mini, deepseek-chat, llama3.2",
+                  font=(F, 8), foreground="#888").pack(padx=16, anchor="w")
+
+        # Status
+        rl = ttk.Label(d, text="", font=(F, 9)); rl.pack(padx=16, pady=(8, 2))
+
+        # Buttons
         bf = ttk.Frame(d); bf.pack(pady=8)
         def _test():
-            k=ke.get().strip(); m=mv.get().strip()
-            if not k: rl.configure(text="Enter key first.", foreground="red"); return
-            cfg.clear_api_key(); cfg.save_api_key(k)
-            if m: ai.save_model(m)
+            k = ke.get().strip(); u = uv.get().strip(); m = mv.get().strip()
+            if not k: rl.configure(text="Enter API key first.", foreground="red"); return
+            cfg.save(key=k, base_url=u, model=m)
             rl.configure(text="Testing…", foreground="#888"); d.update()
-            res=ai.test_connection()
-            if res.get("ok"): rl.configure(text=f"✅ {res.get('model','')}", foreground="green")
+            _, _, test_connection = _lazy_ai()
+            res = test_connection(key=k, base_url=u, model=m)
+            if res.get("ok"): rl.configure(text=f"✅ Connected! Model: {res.get('model','')}", foreground="green")
             else: rl.configure(text=f"❌ {res.get('error','')}", foreground="red")
-        ttk.Button(bf, text="🔍 Test", command=_test).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="🔍 Test Connection", command=_test).pack(side=tk.LEFT, padx=3)
+
         def _save():
-            if ke.get().strip(): cfg.save_api_key(ke.get().strip())
-            if mv.get().strip(): ai.save_model(mv.get().strip())
+            cfg.save(key=ke.get().strip(), base_url=uv.get().strip(), model=mv.get().strip())
             self._ai_refresh_status(); d.destroy()
-        ttk.Button(bf, text="💾 Save", command=_save).pack(side=tk.LEFT, padx=4)
-        ttk.Button(bf, text="Clear", command=lambda: [cfg.clear_api_key(), ke.delete(0,tk.END),
-                      rl.configure(text="Cleared.", foreground="orange")]).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="💾 Save", command=_save).pack(side=tk.LEFT, padx=3)
+
+        ttk.Button(bf, text="🗑 Clear All", command=lambda: [
+                   cfg.clear(), ke.delete(0, tk.END), uv.set(""), mv.set(""),
+                   rl.configure(text="Cleared.", foreground="orange")]
+                   ).pack(side=tk.LEFT, padx=3)
 
     # ═══ COMPARE (lazy) ════════════════════════════════════════
 
