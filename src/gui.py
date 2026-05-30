@@ -59,29 +59,40 @@ class App(tk.Tk):
         self.nb.pack(fill=tk.BOTH, expand=True, padx=12, pady=(4, 10))
         self.nb.bind("<<NotebookTabChanged>>", self._on_tab)
 
-        self._build_analyze()  # only this one at startup
+        # Add ALL tab placeholders at startup (so user sees every tab)
+        # Only Analyze gets real content; others are empty until clicked
+        self._tab_frames: dict[str, ttk.Frame] = {}
+        for key, title in [("A","  📊 Analyze  "), ("V","  🎬 Video  "),
+                           ("C","  📷 Camera  "), ("I","  🤖 AI Coach  "),
+                           ("M","  ⚖ Compare  "), ("H","  📋 History  ")]:
+            f = ttk.Frame(self.nb)
+            self._tab_frames[key] = f
+            self.nb.add(f, text=title)
+            if key != "A":
+                ttk.Label(f, text=f"Click to load {title.strip()}",
+                          font=(F, 12), foreground="#888").pack(expand=True)
+
+        self._build_analyze_content()
 
     def _on_tab(self, e):
         name = self.nb.tab(self.nb.index("current"), "text")
-        if "Analyze" in name and "A" not in self._built:
-            pass  # already built
-        elif "Video" in name and "V" not in self._built:
-            self._build_video()
+        if "Video" in name and "V" not in self._built:
+            self._build_video_content()
         elif "Camera" in name and "C" not in self._built:
-            self._build_camera()
+            self._build_camera_content()
         elif "AI Coach" in name and "I" not in self._built:
-            self._build_ai()
+            self._build_ai_content()
         elif "Compare" in name and "M" not in self._built:
-            self._build_compare()
+            self._build_compare_content()
         elif "History" in name and "H" not in self._built:
-            self._build_history()
+            self._build_history_content()
 
     # ═══ ANALYZE (built at startup) ═══════════════════════════
 
-    def _build_analyze(self):
+    def _build_analyze_content(self):
         self._built.add("A")
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  📊 Analyze  ")
+        tab = self._tab_frames["A"]
+        for w in tab.winfo_children(): w.destroy()
         pw = ttk.PanedWindow(tab, orient=tk.HORIZONTAL)
         pw.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
         self._build_form(pw)
@@ -240,16 +251,15 @@ class App(tk.Tk):
     def _add_cmp(self):
         if self._current_result is None: return
         if len(self._compare) < 2: self._compare.append(self._current_result)
-        if "M" not in self._built: self._build_compare()
+        if "M" not in self._built: self._build_compare_content()
         self._refresh_cmp()
 
     # ═══ VIDEO (lazy) ══════════════════════════════════════════
 
-    def _build_video(self):
+    def _build_video_content(self):
         self._built.add("V")
-        tab = ttk.Frame(self.nb)
-        idx = len([t for t in self.nb.tabs()])  # add at end
-        self.nb.add(tab, text="  🎬 Video  ")
+        tab = self._tab_frames["V"]
+        for w in tab.winfo_children(): w.destroy()
         pw = ttk.PanedWindow(tab, orient=tk.HORIZONTAL)
         pw.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
@@ -357,10 +367,10 @@ class App(tk.Tk):
 
     # ═══ CAMERA (lazy) ═════════════════════════════════════════
 
-    def _build_camera(self):
+    def _build_camera_content(self):
         self._built.add("C")
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  📷 Camera  ")
+        tab = self._tab_frames["C"]
+        for w in tab.winfo_children(): w.destroy()
         pw = ttk.PanedWindow(tab, orient=tk.HORIZONTAL)
         pw.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
@@ -447,17 +457,17 @@ class App(tk.Tk):
             self._c_stop(); self._v_stop(); self.vid.close()
             a=self.vid.load(path)
             if a:
-                if "V" not in self._built: self._build_video()
+                if "V" not in self._built: self._build_video_content()
                 self._v_info.configure(text=f"{a.path.name}  {a.duration:.0f}s")
                 self._v_slider.configure(to=a.frame_count-1); self._v_slider.set(0)
                 self._v_start(); self.nb.select(len([t for t in self.nb.tabs()])-4)
 
     # ═══ AI COACH (lazy) ═══════════════════════════════════════
 
-    def _build_ai(self):
+    def _build_ai_content(self):
         self._built.add("I")
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  🤖 AI Coach  ")
+        tab = self._tab_frames["I"]
+        for w in tab.winfo_children(): w.destroy()
         pw = ttk.PanedWindow(tab, orient=tk.HORIZONTAL)
         pw.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
@@ -572,10 +582,10 @@ class App(tk.Tk):
 
     # ═══ COMPARE (lazy) ════════════════════════════════════════
 
-    def _build_compare(self):
+    def _build_compare_content(self):
         self._built.add("M")
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  ⚖ Compare  ")
+        tab = self._tab_frames["M"]
+        for w in tab.winfo_children(): w.destroy()
         self._cmp_text = tk.Text(tab, wrap=tk.WORD, font=(F, 12), relief=tk.FLAT,
                                  border=0, padx=16, pady=16, state=tk.DISABLED)
         self._cmp_text.pack(fill=tk.BOTH, expand=True)
@@ -606,10 +616,10 @@ class App(tk.Tk):
 
     # ═══ HISTORY (lazy) ════════════════════════════════════════
 
-    def _build_history(self):
+    def _build_history_content(self):
         self._built.add("H")
-        tab = ttk.Frame(self.nb)
-        self.nb.add(tab, text="  📋 History  ")
+        tab = self._tab_frames["H"]
+        for w in tab.winfo_children(): w.destroy()
         self._h_tree = ttk.Treeview(tab, columns=("player","pos","score","date"), show="headings", height=14)
         for c,w in [("player",200),("pos",120),("score",70),("date",150)]:
             self._h_tree.heading(c, text=c.title()); self._h_tree.column(c, width=w)
@@ -618,7 +628,7 @@ class App(tk.Tk):
 
     def _save_hist(self, r):
         from datetime import datetime
-        if "H" not in self._built: self._build_history()
+        if "H" not in self._built: self._build_history_content()
         self._h_tree.insert("", 0, values=(r.player.name, r.player.position.value,
                                             f"{r.overall_score:.0%}",
                                             datetime.now().strftime("%Y-%m-%d %H:%M")))
