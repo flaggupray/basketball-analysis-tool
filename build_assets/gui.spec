@@ -1,19 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for Basketball Inability Analyzer macOS app."""
+"""PyInstaller spec — onedir mode for fast macOS .app launch."""
 
 import sys
 from pathlib import Path
 
-_root = Path(SPECPATH).parent  # project root (parent of build_assets/)
+_root = Path(SPECPATH).parent
 _app_name = "Basketball Analyzer"
 
 a = Analysis(
     [str(_root / 'src/gui.py')],
     pathex=[str(_root)],
     binaries=[],
-    datas=[
-        (str(_root / 'data'), 'data'),
-    ],
+    datas=[(str(_root / 'data'), 'data')],
     hiddenimports=[
         'src.models', 'src.analyzer', 'src.calculator', 'src.benchmarks',
         'src.camera', 'src.video_analyzer', 'src.ai_analyzer', 'src.config',
@@ -22,49 +20,38 @@ a = Analysis(
         'cryptography', 'cryptography.fernet',
         'requests', 'urllib3',
     ],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=[
-        'tkinter.test',
-        'unittest',
-        'pydoc',
-        'distutils',
-        'setuptools',
-    ],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=None,
-    noarchive=False,
+    excludes=['tkinter.test', 'unittest', 'pydoc', 'distutils', 'setuptools'],
 )
 
-pyz = PYZ(a.pure, a.zipped_data, cipher=None)
+pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name=_app_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
     icon=str(_root / 'build_assets/icons/icon.icns'),
 )
 
-app = BUNDLE(
+coll = COLLECT(
     exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name=_app_name,
+)
+
+app = BUNDLE(
+    coll,
     name=f"{_app_name}.app",
     icon=str(_root / 'build_assets/icons/icon.icns'),
     bundle_identifier='com.basketball.analyzer',
