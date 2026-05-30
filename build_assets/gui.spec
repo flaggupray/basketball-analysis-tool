@@ -28,9 +28,6 @@ a = Analysis(
     excludes=[
         'tkinter.test',
         'unittest',
-        'email',
-        'http',
-        'xml',
         'pydoc',
         'distutils',
         'setuptools',
