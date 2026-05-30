@@ -366,7 +366,7 @@ class App(tk.Tk):
 
     def _build_video(self):
         tab = ttk.Frame(self.nb)
-        self.nb.insert(1, tab, text="  🎬 Video  ")
+        self.nb.add(tab, text="  🎬 Video  ")
         pw = ttk.PanedWindow(tab, orient=tk.HORIZONTAL)
         pw.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
@@ -538,7 +538,7 @@ class App(tk.Tk):
 
     def _build_camera(self):
         tab = ttk.Frame(self.nb)
-        self.nb.insert(2, tab, text="  📷 Camera  ")
+        self.nb.add(tab, text="  📷 Camera  ")
         pw = ttk.PanedWindow(tab, orient=tk.HORIZONTAL)
         pw.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
@@ -648,7 +648,7 @@ class App(tk.Tk):
 
     def _build_ai_coach(self):
         tab = ttk.Frame(self.nb)
-        self.nb.insert(3, tab, text="  🤖 AI Coach  ")
+        self.nb.add(tab, text="  🤖 AI Coach  ")
         pw = ttk.PanedWindow(tab, orient=tk.HORIZONTAL)
         pw.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
@@ -801,7 +801,7 @@ class App(tk.Tk):
 
     def _build_compare(self):
         tab = ttk.Frame(self.nb)
-        self.nb.insert(4, tab, text="  ⚖ Compare  ")
+        self.nb.add(tab, text="  ⚖ Compare  ")
         self._compare_text = tk.Text(tab, wrap=tk.WORD, font=(F, 13),
                                      bg=C["card"], fg=C["text"], relief=tk.FLAT,
                                      border=0, padx=20, pady=20, state=tk.DISABLED)
@@ -848,7 +848,7 @@ class App(tk.Tk):
 
     def _build_history(self):
         tab = ttk.Frame(self.nb)
-        self.nb.insert(5, tab, text="  📋 History  ")
+        self.nb.add(tab, text="  📋 History  ")
         self._hist_tree = ttk.Treeview(tab, columns=("player","pos","score","date"),
                                        show="headings", height=14)
         for c, w in [("player",220), ("pos",130), ("score",80), ("date",160)]:
