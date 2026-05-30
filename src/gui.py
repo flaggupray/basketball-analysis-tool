@@ -130,7 +130,7 @@ class App(tk.Tk):
         pw.add(f, weight=62)
         self._r_title = ttk.Label(f, text="Your Analysis", font=(F, 14, "bold"))
         self._r_title.pack(anchor="w")
-        self._r_score = tk.Label(f, text="—", font=(F, 30, "bold"), fg="#ff5e5b", bg=f.cget("bg") if hasattr(f, 'cget') else "#1a1a2e")
+        self._r_score = tk.Label(f, text="—", font=(F, 30, "bold"), fg="#ff5e5b", bg="#f0f0f0")
         self._r_score.pack(anchor="e", pady=(0, 4))
         self._r_summary = ttk.Label(f, text="Fill in your stats and click Analyze.", wraplength=400)
         self._r_summary.pack(anchor="w", pady=(0, 6))
