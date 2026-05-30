@@ -19,8 +19,14 @@ from PIL import Image
 from src.config import load_api_key, has_api_key
 
 MINIMAX_BASE = "https://api.minimax.chat/v1"
-DEFAULT_MODEL = "abab6.5s-chat"
-FALLBACK_MODELS = ["abab6.5s-chat", "abab6.5-chat", "abab6-chat", "abab5.5s-chat", "MiniMax-Text-01"]
+DEFAULT_MODEL = "MiniMax-M2.5-highspeed"
+FALLBACK_MODELS = [
+    "MiniMax-M2.5-highspeed",
+    "MiniMax-M2.5",
+    "MiniMax-M2.7-highspeed",
+    "MiniMax-M2.7",
+    "abab6.5s-chat",
+]
 
 _MODEL_CACHE: str | None = None
 
@@ -58,6 +64,19 @@ def _headers() -> dict[str, str]:
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
+
+
+def _extract_content(msg: dict) -> str:
+    """Extract text content from a MiniMax response message.
+
+    Regular models (M2.5) use 'content'; reasoning models (M2.7) may
+    put the final answer in 'content' with reasoning in 'reasoning_content'.
+    """
+    # Prefer content; fall back to reasoning_content if content is empty
+    content = msg.get("content", "") or ""
+    if not content.strip():
+        content = msg.get("reasoning_content", "") or ""
+    return content
 
 
 def _encode_frame(frame: np.ndarray) -> str:
@@ -119,7 +138,7 @@ def analyze_shooting(
         if data.get("base_resp", {}).get("status_code") != 0:
             return {"error": data.get("base_resp", {}).get("status_msg", "API error")}
 
-        reply = data["choices"][0]["message"]["content"]
+        reply = _extract_content(data["choices"][0]["message"])
 
         return {
             "analysis": reply,
@@ -216,7 +235,7 @@ Keep the response under 250 words. Be direct and specific."""
             return {"error": data.get("base_resp", {}).get("status_msg", "API error")}
 
         return {
-            "analysis": data["choices"][0]["message"]["content"],
+            "analysis": _extract_content(data["choices"][0]["message"]),
             "model": get_model(),
         }
 
