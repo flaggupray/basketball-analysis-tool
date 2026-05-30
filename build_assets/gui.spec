@@ -14,7 +14,12 @@ a = Analysis(
     datas=[
         (str(_root / 'data'), 'data'),
     ],
-    hiddenimports=['src.models', 'src.analyzer', 'src.calculator', 'src.benchmarks'],
+    hiddenimports=[
+        'src.models', 'src.analyzer', 'src.calculator', 'src.benchmarks',
+        'src.camera', 'src.video_analyzer',
+        'cv2', 'numpy', 'PIL', 'PIL.Image', 'PIL.ImageTk',
+        'cv2.videoio_registry',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
