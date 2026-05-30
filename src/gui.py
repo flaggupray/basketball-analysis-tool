@@ -61,12 +61,18 @@ class App(tk.Tk):
 
     def _setup_style(self):
         s = ttk.Style()
-        s.theme_use("clam")
+        try:
+            s.theme_use("clam")
+        except tk.TclError:
+            pass  # fall back to system default
+
         s.configure(".", background=C["bg"], foreground=C["text"], font=(FONT, 11))
         s.configure("TNotebook", background=C["bg"], borderwidth=0)
         s.configure("TNotebook.Tab", padding=[18, 8], font=(FONT, 12, "bold"),
                      background=C["card"], foreground=C["subtext"], borderwidth=0)
-        s.map("TNotebook.Tab", selected=[("background", C["accent"]), ("foreground", "#fff")])
+        s.map("TNotebook.Tab",
+              background=[("selected", C["accent"]), ("active", C["card2"])],
+              foreground=[("selected", "#fff"), ("active", C["text"])])
         s.configure("Card.TFrame", background=C["card"])
         s.configure("Dark.TFrame", background=C["bg"])
         s.configure("Title.TLabel", font=(FONT, 18, "bold"), foreground=C["text"], background=C["bg"])
