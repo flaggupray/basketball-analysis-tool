@@ -1,0 +1,5 @@
+# Core (no external dependencies needed — stdlib only)
+# Add for optional features:
+# rich>=13.0.0      # prettier CLI output
+# pandas>=2.0.0     # bulk data analysis
+# matplotlib>=3.7.0 # visualization
