@@ -116,22 +116,11 @@ class App(tk.Tk):
         self.nb.pack(fill=tk.BOTH, expand=True, padx=14, pady=(2, 14))
 
         self._build_analyze()
-        self.nb.bind("<<NotebookTabChanged>>", self._on_tab_change)
-
-    def _on_tab_change(self, event):
-        idx = self.nb.index("current")
-        tab_text = self.nb.tab(idx, "text")
-        # Build heavy tabs lazily when selected
-        if "Video" in tab_text and not hasattr(self, "_vid_tab_built"):
-            self._build_video()
-        elif "Camera" in tab_text and not hasattr(self, "_cam_tab_built"):
-            self._build_camera()
-        elif "AI Coach" in tab_text and not hasattr(self, "_ai_tab_built"):
-            self._build_ai_coach()
-        elif "Compare" in tab_text and not hasattr(self, "_cmp_tab_built"):
-            self._build_compare()
-        elif "History" in tab_text and not hasattr(self, "_hist_tab_built"):
-            self._build_history()
+        self._build_video()
+        self._build_camera()
+        self._build_ai_coach()
+        self._build_compare()
+        self._build_history()
 
     # ════════════════════════════════════════════════════════════
     #  TAB 1: ANALYZE (built at startup — lightweight)
@@ -369,8 +358,6 @@ class App(tk.Tk):
         if len(self._compare) < 2:
             self._compare.append(self._current_result)
             # Ensure compare tab is built
-            if not hasattr(self, "_cmp_tab_built"):
-                self._build_compare()
             self._refresh_compare()
 
     # ════════════════════════════════════════════════════════════
@@ -436,7 +423,6 @@ class App(tk.Tk):
         ttk.Button(bb, text="Load Video…", command=self._load_video).pack(side=tk.LEFT, padx=2)
         ttk.Button(bb, text="Update", command=self._vid_refresh_report).pack(side=tk.LEFT, padx=2)
         ttk.Button(bb, text="Export", command=self._export_video_analysis).pack(side=tk.LEFT, padx=2)
-        self._vid_tab_built = True
 
     def _load_video(self):
         p = filedialog.askopenfilename(filetypes=[("Video","*.mp4 *.mov *.avi *.mkv"),("All","*.*")])
@@ -587,7 +573,6 @@ class App(tk.Tk):
                        relief=tk.FLAT, border=0, padx=8, pady=6, state=tk.DISABLED)
         tips.insert("1.0", "💡 Record 10-20 shots, then analyze in Video tab.")
         tips.pack(fill=tk.X, padx=14, pady=(0,10))
-        self._cam_tab_built = True
 
     def _cam_open(self):
         if self.camera.is_open: self._cam_close()
@@ -652,7 +637,6 @@ class App(tk.Tk):
             self._stop_cam(); self._stop_vid(); self.video.close()
             a = self.video.load(path)
             if a:
-                if not hasattr(self, "_vid_tab_built"): self._build_video()
                 self._vid_info.configure(text=f"{a.path.name} | {a.duration:.1f}s")
                 self._vid_slider.configure(to=a.frame_count-1); self._vid_slider.set(0)
                 self._vid_loop()
@@ -715,7 +699,6 @@ class App(tk.Tk):
         bb.pack(fill=tk.X, padx=14, pady=(4, 10))
         ttk.Button(bb, text="Copy", command=self._ai_copy).pack(side=tk.LEFT, padx=2)
         ttk.Button(bb, text="Clear", command=self._ai_clear).pack(side=tk.LEFT, padx=2)
-        self._ai_tab_built = True
         self._refresh_ai_status()
 
     def _refresh_ai_status(self):
@@ -831,7 +814,6 @@ class App(tk.Tk):
         bb = ttk.Frame(tab, style="Card.TFrame")
         bb.pack(fill=tk.X, padx=8, pady=(0,8))
         ttk.Button(bb, text="Clear", command=self._clear_compare).pack(side=tk.LEFT, padx=4)
-        self._cmp_tab_built = True
 
     def _refresh_compare(self):
         if not hasattr(self, '_compare_text'): return
@@ -876,11 +858,8 @@ class App(tk.Tk):
         bb = ttk.Frame(tab, style="Card.TFrame")
         bb.pack(fill=tk.X, padx=8, pady=(0,8))
         ttk.Button(bb, text="Clear", command=self._clear_history).pack(side=tk.LEFT, padx=4)
-        self._hist_tab_built = True
-
     def _save_history(self, r):
         from datetime import datetime
-        if not hasattr(self, "_hist_tab_built"): self._build_history()
         self._hist_tree.insert("", 0, values=(r.player.name, r.player.position.value,
                                                f"{r.overall_score:.0%}",
                                                datetime.now().strftime("%Y-%m-%d %H:%M")))
